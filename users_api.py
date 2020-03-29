@@ -1,5 +1,8 @@
+import sys
+
 import flask
-from flask import jsonify, request
+import requests
+from flask import jsonify, request, render_template
 
 from data import db_session
 from data.users import User
@@ -50,7 +53,7 @@ def get_one_user(user_id):
         return jsonify({'error': 'Not found'})
     return jsonify(
         {
-            'user': user.to_dict(only=('id', 'name'))
+            'user': user.to_dict()
         }
     )
 
@@ -88,3 +91,40 @@ def edit_user(user_id):
     session.merge(user)
     session.commit()
     return jsonify({'success': 'OK'})
+
+
+@blueprint.route('/users_show/<int:user_id>')
+def show_city(user_id):
+    response = get_one_user(user_id).json
+    if 'error' in response:
+        return render_template('not_found.html', user_id=user_id)
+
+    user = response['user']
+
+    geo_request = "https://geocode-maps.yandex.ru/1.x/"
+    map_request = "http://static-maps.yandex.ru/1.x/"
+    d = {
+        'apikey': '40d1649f-0493-4b70-98ba-98533de7710b',
+        'format': 'json',
+        'geocode': user['city_from'],
+    }
+    response = requests.get(geo_request, params=d).json()
+    if not response:
+        print("Ошибка выполнения запроса:")
+        print(map_request)
+        print("Http статус:", response.status_code, "(", response.reason, ")")
+        sys.exit(1)
+    d = {
+        'l': 'sat',
+        'll': ','.join(response['response']['GeoObjectCollection']
+                       ['featureMember'][0]['GeoObject']['Point']['pos'].split()),
+        'z': '12',
+        'size': '650,450'
+    }
+    response = requests.get(map_request, params=d)
+    if not response:
+        print("Ошибка выполнения запроса:")
+        print(map_request)
+        print("Http статус:", response.status_code, "(", response.reason, ")")
+        sys.exit(1)
+    return render_template('show_city.html', user=user, title='Hometown', url=response.url)
